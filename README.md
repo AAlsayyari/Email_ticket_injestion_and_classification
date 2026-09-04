@@ -71,6 +71,11 @@ Both single-ticket and bulk re-classification have been implemented to handle mo
 
 ### AI use.
 
-   **UI:** Used AI to help with the design and code of the UI.
-   **Script stitching:** Used AI to stitch together scripts that I made in order to run them in a unified manner.
-   **README.md:** Used AI to help with the design and content of the README.md file.
+   **UI:** 
+   Used AI to help with the design and code of the UI.
+   
+   **Script stitching:** 
+   Used AI to stitch together scripts that I made in order to run them in a unified manner.
+   
+   **README.md:** 
+   Used AI to help with the design and content of the README.md file.
