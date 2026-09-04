@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Email Ticket Dashboard — Create, classify, and manage support tickets with AI-powered LLM classification." />
+    <title>Ticket Dashboard — AI Classification</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+        /* ============================================================
+           DESIGN SYSTEM
+           ============================================================ */
+        :root {
+            --bg-primary:    #0b0d14;
+            --bg-secondary:  #111420;
+            --bg-card:       rgba(17, 20, 35, 0.72);
+            --bg-card-hover: rgba(24, 28, 50, 0.85);
+            --bg-input:      rgba(255, 255, 255, 0.04);
+            --border-subtle:  rgba(255, 255, 255, 0.06);
+            --border-focus:   rgba(139, 92, 246, 0.5);
+            --text-primary:   #eef0f6;
+            --text-secondary: #8b8fa3;
+            --text-muted:     #5a5e72;
+            --accent-violet:  #8b5cf6;
+            --accent-cyan:    #06b6d4;
+            --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+            --status-pending-bg:    rgba(251, 191, 36, 0.12);
+            --status-pending-text:  #fbbf24;
+            --status-classified-bg:  rgba(34, 197, 94, 0.12);
+            --status-classified-text:#22c55e;
+            --status-failed-bg:     rgba(239, 68, 68, 0.12);
+            --status-failed-text:   #ef4444;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+            --transition-fast: 0.18s ease;
+            --transition-med:  0.3s ease;
+        }
+
+        /* ============================================================
+           RESET & BASE
+           ============================================================ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Subtle grid pattern overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                radial-gradient(circle at 25% 25%, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 75% 75%, rgba(6, 182, 212, 0.03) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ============================================================
+           LAYOUT
+           ============================================================ */
+        .app-container {
+            position: relative;
+            z-index: 1;
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 0 24px 64px;
+        }
+
+        /* ============================================================
+           HEADER
+           ============================================================ */
+        .header {
+            padding: 32px 0 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .header__brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .header__logo {
+            width: 42px; height: 42px;
+            background: var(--accent-gradient);
+            border-radius: var(--radius-sm);
+            display: grid;
+            place-items: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: #fff;
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.25);
+        }
+        .header__title {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        .header__title span {
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            transition: border-color var(--transition-fast), transform var(--transition-fast);
+        }
+        .stat-card:hover {
+            border-color: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+        .stat-card__label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+        }
+        .stat-card__value {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+        .stat-card--total  .stat-card__value { color: var(--text-primary); }
+        .stat-card--pending .stat-card__value { color: var(--status-pending-text); }
+        .stat-card--classified .stat-card__value { color: var(--status-classified-text); }
+        .stat-card--failed .stat-card__value { color: var(--status-failed-text); }
+
+        /* ============================================================
+           SECTIONS
+           ============================================================ */
+        .section {
+            margin-top: 32px;
+        }
+        .section__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .section__title {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+
+        /* ============================================================
+           CREATE TICKET FORM
+           ============================================================ */
+        .create-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 28px;
+            box-shadow: var(--shadow-card);
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 14px;
+            padding: 12px 14px;
+            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+            outline: none;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 14px;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            padding: 10px 20px;
+            transition: all var(--transition-fast);
+        }
+        .btn--primary {
+            background: var(--accent-gradient);
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(139, 92, 246, 0.3);
+        }
+        .btn--primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+        }
+        .btn--primary:active { transform: translateY(0); }
+        .btn--primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn--ghost {
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+        .btn--ghost:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+        }
+        .btn--icon {
+            width: 36px; height: 36px;
+            padding: 0;
+            border-radius: var(--radius-sm);
+        }
+        .btn--sm {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+        .btn--reclassify {
+            background: rgba(251, 191, 36, 0.12);
+            color: var(--status-pending-text);
+            border: 1px solid rgba(251, 191, 36, 0.2);
+        }
+        .btn--reclassify:hover {
+            background: rgba(251, 191, 36, 0.2);
+        }
+
+        /* Spinner */
+        .spinner {
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ============================================================
+           FILTER BAR
+           ============================================================ */
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+        .filter-bar select {
+            appearance: none;
+            background: var(--bg-input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b8fa3' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E") no-repeat right 12px center;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 8px 32px 8px 12px;
+            cursor: pointer;
+            outline: none;
+            transition: border-color var(--transition-fast);
+        }
+        .filter-bar select:focus {
+            border-color: var(--border-focus);
+        }
+        .filter-bar select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        .filter-bar__right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .auto-refresh-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            user-select: none;
+        }
+        .auto-refresh-toggle input[type="checkbox"] {
+            display: none;
+        }
+        .toggle-track {
+            width: 36px; height: 20px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            position: relative;
+            transition: background var(--transition-fast);
+        }
+        .toggle-track::after {
+            content: '';
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 16px; height: 16px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: all var(--transition-fast);
+        }
+        .auto-refresh-toggle input:checked + .toggle-track {
+            background: rgba(139, 92, 246, 0.3);
+        }
+        .auto-refresh-toggle input:checked + .toggle-track::after {
+            left: 18px;
+            background: var(--accent-violet);
+            box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+        }
+
+        /* ============================================================
+           TABLE
+           ============================================================ */
+        .table-wrapper {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-card);
+        }
+        .table-scroll {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        thead {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        thead th {
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            transition: color var(--transition-fast);
+        }
+        thead th:hover { color: var(--text-secondary); }
+        thead th .sort-icon { margin-left: 4px; opacity: 0.4; }
+        thead th.sorted .sort-icon { opacity: 1; color: var(--accent-violet); }
+        tbody tr {
+            border-bottom: 1px solid var(--border-subtle);
+            transition: background var(--transition-fast);
+            cursor: pointer;
+        }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: var(--bg-card-hover); }
+        tbody td {
+            padding: 12px 16px;
+            vertical-align: top;
+            color: var(--text-secondary);
+        }
+        tbody td:first-child {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        .td-subject {
+            color: var(--text-primary) !important;
+            font-weight: 500;
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Status badges */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+        }
+        .badge--pending {
+            background: var(--status-pending-bg);
+            color: var(--status-pending-text);
+        }
+        .badge--classified {
+            background: var(--status-classified-bg);
+            color: var(--status-classified-text);
+        }
+        .badge--failed {
+            background: var(--status-failed-bg);
+            color: var(--status-failed-text);
+        }
+        .badge__dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .badge--pending .badge__dot {
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+
+        /* Priority pills */
+        .priority-pill {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+        .priority-pill--HIGH { color: #ef4444; }
+        .priority-pill--MEDIUM { color: #f59e0b; }
+        .priority-pill--LOW { color: #22c55e; }
+
+        /* Expanded row */
+        .expanded-row td {
+            padding: 0 !important;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .expanded-content {
+            padding: 16px 24px 20px;
+            background: rgba(0, 0, 0, 0.15);
+            animation: slideDown 0.25s ease;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; max-height: 0; }
+            to   { opacity: 1; max-height: 400px; }
+        }
+        .expanded-content__label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            margin-top: 12px;
+        }
+        .expanded-content__label:first-child { margin-top: 0; }
+        .expanded-content__text {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .expanded-content__summary {
+            color: var(--accent-cyan);
+            font-style: italic;
+        }
+        .expanded-actions {
+            margin-top: 14px;
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--text-muted);
+        }
+        .empty-state__icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            opacity: 0.3;
+        }
+        .empty-state__text { font-size: 14px; }
+
+        /* Table row fade-in */
+        @keyframes fadeInRow {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        tbody tr { animation: fadeInRow 0.3s ease both; }
+
+        /* ============================================================
+           TOAST NOTIFICATIONS
+           ============================================================ */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 12px 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: toastIn 0.3s ease;
+            max-width: 380px;
+        }
+        .toast--success { border-left: 3px solid var(--status-classified-text); }
+        .toast--error   { border-left: 3px solid var(--status-failed-text); }
+        .toast--info    { border-left: 3px solid var(--accent-violet); }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateX(0); }
+            to   { opacity: 0; transform: translateX(40px); }
+        }
+
+        /* ============================================================
+           LOADING OVERLAY
+           ============================================================ */
+        .table-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            gap: 10px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .table-loading .spinner {
+            border-color: rgba(139, 92, 246, 0.2);
+            border-top-color: var(--accent-violet);
+        }
+
+        /* ============================================================
+           RESPONSIVE
+           ============================================================ */
+        @media (max-width: 768px) {
+            .stats-bar { grid-template-columns: repeat(2, 1fr); }
+            .header__title { font-size: 20px; }
+            .stat-card__value { font-size: 22px; }
+            .create-card { padding: 20px; }
+            .filter-bar { flex-direction: column; align-items: stretch; }
+            .filter-bar__right { margin-left: 0; justify-content: space-between; }
+            .td-subject { max-width: 180px; }
+        }
+        @media (max-width: 480px) {
+            .stats-bar { grid-template-columns: 1fr; }
+            .app-container { padding: 0 12px 40px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- ==================== HEADER ==================== -->
+    <header class="header" id="app-header">
+        <div class="header__brand">
+            <div class="header__logo">T</div>
+            <h1 class="header__title"><span>Ticket</span> Dashboard</h1>
+        </div>
+        <div class="stats-bar" id="stats-bar">
+            <div class="stat-card stat-card--total">
+                <span class="stat-card__label">Total Tickets</span>
+                <span class="stat-card__value" id="stat-total">—</span>
+            </div>
+            <div class="stat-card stat-card--pending">
+                <span class="stat-card__label">Pending</span>
+                <span class="stat-card__value" id="stat-pending">—</span>
+            </div>
+            <div class="stat-card stat-card--classified">
+                <span class="stat-card__label">Classified</span>
+                <span class="stat-card__value" id="stat-classified">—</span>
+            </div>
+            <div class="stat-card stat-card--failed">
+                <span class="stat-card__label">Failed</span>
+                <span class="stat-card__value" id="stat-failed">—</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ==================== CREATE TICKET ==================== -->
+    <section class="section" id="create-section">
+        <div class="section__header">
+            <h2 class="section__title">Create Mock Ticket</h2>
+        </div>
+        <div class="create-card">
+            <form id="create-form" class="form-grid">
+                <div class="form-group">
+                    <label for="ticket-subject">Subject</label>
+                    <input type="text" id="ticket-subject" placeholder="e.g. Charged twice this month" required />
+                </div>
+                <div class="form-group">
+                    <label for="ticket-body">Body</label>
+                    <textarea id="ticket-body" rows="4" placeholder="Describe the support issue in detail…" required></textarea>
+                </div>
+                <div>
+                    <button type="submit" class="btn btn--primary" id="submit-btn">
+                        <span id="submit-text">Submit Ticket</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <!-- ==================== TICKET TABLE ==================== -->
+    <section class="section" id="table-section">
+        <div class="section__header">
+            <h2 class="section__title">All Tickets</h2>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-bar" id="filter-bar">
+            <select id="filter-status" aria-label="Filter by status">
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="classified">Classified</option>
+                <option value="failed">Failed</option>
+            </select>
+            <select id="filter-class" aria-label="Filter by class">
+                <option value="">All Classes</option>
+                <option value="BILLING">Billing</option>
+                <option value="TECHNICAL">Technical</option>
+                <option value="ACCOUNT">Account</option>
+                <option value="SECURITY">Security</option>
+                <option value="SALES">Sales</option>
+                <option value="FEATURE_REQUEST">Feature Request</option>
+                <option value="OTHER">Other</option>
+            </select>
+            <select id="filter-priority" aria-label="Filter by priority">
+                <option value="">All Priorities</option>
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
+            </select>
+
+            <div class="filter-bar__right">
+                <label class="auto-refresh-toggle" id="auto-refresh-label">
+                    <input type="checkbox" id="auto-refresh-toggle" />
+                    <span class="toggle-track"></span>
+                    <span>Auto-refresh</span>
+                </label>
+                <button class="btn btn--ghost btn--icon" id="refresh-btn" title="Refresh now">
+                    ↻
+                </button>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-wrapper" style="margin-top: 12px;">
+            <div class="table-scroll">
+                <table id="tickets-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="id" class="sorted">ID <span class="sort-icon">↓</span></th>
+                            <th data-sort="subject">Subject <span class="sort-icon">↕</span></th>
+                            <th data-sort="Status">Status <span class="sort-icon">↕</span></th>
+                            <th data-sort="class">Class <span class="sort-icon">↕</span></th>
+                            <th data-sort="priority">Priority <span class="sort-icon">↕</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tickets-tbody">
+                        <!-- Rendered by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-loading" id="table-loading" style="display: none;">
+                <div class="spinner"></div>
+                <span>Loading tickets…</span>
+            </div>
+            <div class="empty-state" id="empty-state" style="display: none;">
+                <div class="empty-state__icon">📭</div>
+                <p class="empty-state__text">No tickets found. Create one above to get started.</p>
+            </div>
+        </div>
+    </section>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+/* ================================================================
+   APPLICATION STATE
+   ================================================================ */
+const API_BASE = '/api';
+let allTickets = [];
+let expandedId = null;
+let sortField = 'id';
+let sortDir = 'desc';
+let autoRefreshInterval = null;
+
+/* ================================================================
+   DOM REFERENCES
+   ================================================================ */
+const $ = (sel) => document.querySelector(sel);
+const tbody = $('#tickets-tbody');
+const tableLoading = $('#table-loading');
+const emptyState = $('#empty-state');
+const form = $('#create-form');
+const submitBtn = $('#submit-btn');
+const submitText = $('#submit-text');
+const filterStatus = $('#filter-status');
+const filterClass = $('#filter-class');
+const filterPriority = $('#filter-priority');
+const refreshBtn = $('#refresh-btn');
+const autoRefreshCheckbox = $('#auto-refresh-toggle');
+
+/* ================================================================
+   TOAST NOTIFICATIONS
+   ================================================================ */
+function showToast(message, type = 'info') {
+    const container = $('#toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast toast--${type}`;
+    const icons = { success: '✓', error: '✕', info: 'ℹ' };
+    toast.innerHTML = `<span>${icons[type] || 'ℹ'}</span><span>${message}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'toastOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+/* ================================================================
+   API HELPERS
+   ================================================================ */
+async function apiGet(path) {
+    const res = await fetch(`${API_BASE}${path}`);
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    return res.json();
+}
+
+async function apiPost(path, body) {
+    const res = await fetch(`${API_BASE}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail || `API error ${res.status}`);
+    }
+    return res.json();
+}
+
+/* ================================================================
+   STATS
+   ================================================================ */
+async function loadStats() {
+    try {
+        const stats = await apiGet('/stats');
+        $('#stat-total').textContent = stats.total;
+        $('#stat-pending').textContent = stats.pending;
+        $('#stat-classified').textContent = stats.classified;
+        $('#stat-failed').textContent = stats.failed;
+    } catch (e) {
+        console.error('Failed to load stats:', e);
+    }
+}
+
+/* ================================================================
+   TICKET TABLE — FETCH & RENDER
+   ================================================================ */
+async function loadTickets(silent = false) {
+    const params = new URLSearchParams();
+    if (filterStatus.value) params.set('status', filterStatus.value);
+    if (filterClass.value) params.set('class', filterClass.value);
+    if (filterPriority.value) params.set('priority', filterPriority.value);
+
+    const qs = params.toString();
+    const path = `/tickets${qs ? '?' + qs : ''}`;
+
+    // Only show loading state on initial load or explicit (non-silent) refreshes
+    if (!silent) {
+        tableLoading.style.display = 'flex';
+        emptyState.style.display = 'none';
+        tbody.innerHTML = '';
+    }
+
+    try {
+        const data = await apiGet(path);
+        allTickets = data.tickets || [];
+        sortTickets();
+        renderTable();
+    } catch (e) {
+        // Only show error toasts on non-silent refreshes to avoid spamming
+        if (!silent) {
+            showToast('Failed to load tickets: ' + e.message, 'error');
+        }
+    } finally {
+        if (!silent) {
+            tableLoading.style.display = 'none';
+        }
+    }
+}
+
+function sortTickets() {
+    allTickets.sort((a, b) => {
+        let aVal = a[sortField] ?? '';
+        let bVal = b[sortField] ?? '';
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        aVal = String(aVal).toLowerCase();
+        bVal = String(bVal).toLowerCase();
+        const cmp = aVal.localeCompare(bVal);
+        return sortDir === 'asc' ? cmp : -cmp;
+    });
+}
+
+function buildRowHTML(ticket) {
+    const statusClass = `badge--${ticket.Status || 'pending'}`;
+    const priorityClass = ticket.priority ? `priority-pill--${ticket.priority}` : '';
+    return `
+        <td>${ticket.id}</td>
+        <td class="td-subject" title="${escapeHtml(ticket.subject || '')}">${escapeHtml(ticket.subject || '—')}</td>
+        <td>
+            <span class="badge ${statusClass}">
+                <span class="badge__dot"></span>
+                ${ticket.Status || 'pending'}
+            </span>
+        </td>
+        <td>${ticket['class'] || '—'}</td>
+        <td><span class="priority-pill ${priorityClass}">${ticket.priority || '—'}</span></td>
+    `;
+}
+
+function buildExpandedHTML(ticket) {
+    const summaryBlock = ticket.summary
+        ? `<div class="expanded-content__label">AI Summary</div>
+           <p class="expanded-content__text expanded-content__summary">${escapeHtml(ticket.summary)}</p>`
+        : '';
+    const reclassifyBtn = ticket.Status === 'failed'
+        ? `<button class="btn btn--reclassify btn--sm" onclick="reclassifyTicket(${ticket.id}, event)">↻ Reclassify</button>`
+        : '';
+    return `
+        <td colspan="5">
+            <div class="expanded-content">
+                <div class="expanded-content__label">Body</div>
+                <p class="expanded-content__text">${escapeHtml(ticket.body || '—')}</p>
+                ${summaryBlock}
+                <div class="expanded-actions">
+                    ${reclassifyBtn}
+                </div>
+            </div>
+        </td>
+    `;
+}
+
+function renderTable() {
+    if (allTickets.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.style.display = 'block';
+        return;
+    }
+    emptyState.style.display = 'none';
+
+    // Build a map of existing DOM rows by ticket id for in-place updates
+    const existingRows = {};
+    const existingExpanded = {};
+    tbody.querySelectorAll('tr[data-id]').forEach(tr => {
+        existingRows[tr.dataset.id] = tr;
+    });
+    tbody.querySelectorAll('tr[data-expanded-for]').forEach(tr => {
+        existingExpanded[tr.dataset.expandedFor] = tr;
+    });
+
+    // Track which ids are in the new data
+    const newIds = new Set(allTickets.map(t => String(t.id)));
+
+    // Remove rows that no longer exist in the data
+    Object.keys(existingRows).forEach(id => {
+        if (!newIds.has(id)) {
+            existingRows[id].remove();
+            if (existingExpanded[id]) existingExpanded[id].remove();
+        }
+    });
+
+    // Build the new table in order
+    let insertBefore = tbody.firstChild;
+
+    allTickets.forEach((ticket, idx) => {
+        const ticketId = String(ticket.id);
+        const newHTML = buildRowHTML(ticket);
+        let tr = existingRows[ticketId];
+
+        if (tr) {
+            // Update existing row content in-place (no animation replay)
+            if (tr.innerHTML !== newHTML) {
+                tr.innerHTML = newHTML;
+            }
+            tr.style.animation = 'none';
+        } else {
+            // Brand new row — create with entrance animation
+            tr = document.createElement('tr');
+            tr.dataset.id = ticketId;
+            tr.style.animationDelay = `${idx * 0.03}s`;
+        }
+
+        // Re-attach click listener (idempotent via replacement)
+        tr.onclick = () => toggleExpanded(ticket.id);
+
+        // Position the row correctly in DOM order
+        if (tr.parentNode !== tbody) {
+            tbody.insertBefore(tr, insertBefore);
+        } else {
+            // Move to correct position if needed
+            if (tr.nextSibling !== insertBefore) {
+                tbody.insertBefore(tr, insertBefore);
+            }
+        }
+
+        // Handle expanded detail row
+        const existingDetail = tbody.querySelector(`tr[data-expanded-for="${ticketId}"]`);
+        if (expandedId === ticket.id) {
+            const expandedHTML = buildExpandedHTML(ticket);
+            if (existingDetail) {
+                // Update in-place
+                if (existingDetail.innerHTML !== expandedHTML) {
+                    existingDetail.innerHTML = expandedHTML;
+                }
+                // Make sure it's right after the main row
+                if (existingDetail.previousSibling !== tr) {
+                    tr.after(existingDetail);
+                }
+            } else {
+                // Create new expanded row
+                const detailTr = document.createElement('tr');
+                detailTr.className = 'expanded-row';
+                detailTr.dataset.expandedFor = ticketId;
+                detailTr.innerHTML = expandedHTML;
+                tr.after(detailTr);
+            }
+            insertBefore = (tbody.querySelector(`tr[data-expanded-for="${ticketId}"]`) || tr).nextSibling;
+        } else {
+            if (existingDetail) existingDetail.remove();
+            insertBefore = tr.nextSibling;
+        }
+    });
+}
+
+function toggleExpanded(id) {
+    expandedId = expandedId === id ? null : id;
+    renderTable();
+}
+
+/* ================================================================
+   RECLASSIFY
+   ================================================================ */
+async function reclassifyTicket(id, event) {
+    event.stopPropagation();
+    try {
+        await apiPost(`/tickets/${id}/reclassify`, {});
+        showToast(`Ticket #${id} queued for reclassification.`, 'info');
+        await refreshAll();
+    } catch (e) {
+        showToast('Reclassify failed: ' + e.message, 'error');
+    }
+}
+// Expose to inline onclick
+window.reclassifyTicket = reclassifyTicket;
+
+/* ================================================================
+   SORTING
+   ================================================================ */
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const field = th.dataset.sort;
+        if (sortField === field) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortField = field;
+            sortDir = 'asc';
+        }
+
+        // Update visual indicators
+        document.querySelectorAll('thead th').forEach(h => h.classList.remove('sorted'));
+        th.classList.add('sorted');
+        th.querySelector('.sort-icon').textContent = sortDir === 'asc' ? '↑' : '↓';
+
+        sortTickets();
+        renderTable();
+    });
+});
+
+/* ================================================================
+   FILTERS
+   ================================================================ */
+[filterStatus, filterClass, filterPriority].forEach(el => {
+    el.addEventListener('change', () => {
+        expandedId = null;
+        loadTickets();
+    });
+});
+
+/* ================================================================
+   CREATE TICKET
+   ================================================================ */
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const subject = $('#ticket-subject').value.trim();
+    const body = $('#ticket-body').value.trim();
+    if (!subject || !body) return;
+
+    submitBtn.disabled = true;
+    submitText.innerHTML = '<div class="spinner"></div> Submitting…';
+
+    try {
+        const res = await apiPost('/tickets', { subject, body });
+        showToast(`Ticket #${res.ticket_id} created! Classification in progress…`, 'success');
+        form.reset();
+        await refreshAll();
+    } catch (e) {
+        showToast('Failed to create ticket: ' + e.message, 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitText.textContent = 'Submit Ticket';
+    }
+});
+
+/* ================================================================
+   AUTO-REFRESH
+   ================================================================ */
+autoRefreshCheckbox.addEventListener('change', () => {
+    if (autoRefreshCheckbox.checked) {
+        autoRefreshInterval = setInterval(() => refreshAll(true), 5000);
+        showToast('Auto-refresh enabled (every 5s)', 'info');
+    } else {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+});
+
+refreshBtn.addEventListener('click', () => {
+    refreshAll();
+    showToast('Refreshed!', 'info');
+});
+
+/* ================================================================
+   HELPERS
+   ================================================================ */
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+async function refreshAll(silent = false) {
+    await Promise.all([loadStats(), loadTickets(silent)]);
+}
+
+/* ================================================================
+   INIT
+   ================================================================ */
+refreshAll();
+</script>
+
+</body>
+</html>

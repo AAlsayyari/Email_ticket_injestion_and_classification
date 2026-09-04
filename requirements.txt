@@ -1,5 +1,8 @@
 fastapi
-uvicorn
-sqlmodel
-openai
+uvicorn[standard]
+supabase
 pydantic
+transformers
+torch
+accelerate
+python-dotenv
