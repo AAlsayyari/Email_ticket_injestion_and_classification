@@ -7,9 +7,6 @@ from LLMcall import classify_ticket
 
 load_dotenv()
 
-# ---------------------------------------------------------
-# Supabase connection
-# ---------------------------------------------------------
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
@@ -23,7 +20,6 @@ ALLOWED_PRIORITIES = ["LOW", "MEDIUM", "HIGH"]
 
 
 def _classify_and_update(ticket_id: int, subject: str, body: str):
-    """Classify a single ticket via the LLM and update the DB."""
     try:
         result = classify_ticket(subject, body)
 
@@ -55,7 +51,6 @@ def _classify_and_update(ticket_id: int, subject: str, body: str):
 
 
 def process_json_data(json_list):
-    """Insert tickets and classify them concurrently."""
     executor = ThreadPoolExecutor(max_workers=4)
     futures = []
 
@@ -65,34 +60,29 @@ def process_json_data(json_list):
         subject = item.get("subject", "")
         body = item.get("body", "")
 
-        # Skip duplicates
         check = supabase.table("email_dataset").select("id").eq("id", numeric_id).execute()
         if check.data:
             print(f"Skipping {raw_id}: Already in database.")
             continue
 
-        # Insert as pending
         supabase.table("email_dataset").insert({
             "id": numeric_id,
             "subject": subject,
             "body": body,
             "Status": "pending",
         }).execute()
-        print(f"Inserted {raw_id} → queuing classification…")
+        print(f"Inserted {raw_id} -> queuing classification")
 
-        # Immediately submit classification to a background thread
         fut = executor.submit(_classify_and_update, numeric_id, subject, body)
         futures.append(fut)
 
-    # Wait for all classifications to finish
-    print(f"\nAll inserts done. Waiting for {len(futures)} classification(s)…")
+    print(f"\nAll inserts done. Waiting for {len(futures)} classification(s)")
     for fut in as_completed(futures):
-        fut.result()  # surfaces any unhandled exceptions
+        fut.result()
 
     executor.shutdown(wait=True)
     print("Done.")
 
 
-# Run
 dataset = json.load(open("dataset1.json"))
 process_json_data(dataset)

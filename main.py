@@ -1,11 +1,3 @@
-"""
-main.py — FastAPI backend for the Email Ticket Dashboard.
-
-Serves the frontend, exposes CRUD + filter API routes for tickets,
-and runs LLM classification as a decoupled background task with
-retry logic and timeout protection.
-"""
-
 import time
 import logging
 import traceback
@@ -22,15 +14,12 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-# ---------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 TABLE_NAME = "email_dataset"
-LLM_TIMEOUT_SECONDS = 120  # Max time to wait for a single LLM call
-MAX_RETRIES = 2            # Number of retries before marking as 'failed'
+LLM_TIMEOUT_SECONDS = 120  
+MAX_RETRIES = 2            
 
 ALLOWED_CLASSES = [
     "BILLING", "TECHNICAL", "ACCOUNT", "OTHER",
@@ -38,9 +27,6 @@ ALLOWED_CLASSES = [
 ]
 ALLOWED_PRIORITIES = ["LOW", "MEDIUM", "HIGH"]
 
-# ---------------------------------------------------------
-# Logging
-# ---------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(message)s",
@@ -48,17 +34,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ticket-dashboard")
 
-# ---------------------------------------------------------
-# Supabase Client
-# ---------------------------------------------------------
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Thread pool used to run the synchronous LLM call with a timeout
 _executor = ThreadPoolExecutor(max_workers=2)
 
-# ---------------------------------------------------------
-# Lifespan (startup / shutdown)
-# ---------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Dashboard server starting up…")
@@ -73,12 +52,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Serve static files (index.html, etc.)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ---------------------------------------------------------
-# Pydantic Models
-# ---------------------------------------------------------
 class TicketCreate(BaseModel):
     subject: str = Field(..., min_length=1, max_length=500)
     body: str = Field(..., min_length=1, max_length=10000)
@@ -90,7 +65,6 @@ class TicketResponse(BaseModel):
     body: str | None = None
     Status: str | None = None
 
-    # These are nullable — only populated after classification
     class_: str | None = Field(None, alias="class")
     priority: str | None = None
     summary: str | None = None
@@ -98,36 +72,21 @@ class TicketResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-# ---------------------------------------------------------
-# LLM Background Task
-# ---------------------------------------------------------
 def _run_llm_classification(subject: str, body: str) -> dict | None:
-    """
-    Import and call classify_ticket from LLMcall.py.
-    Isolated in a function so we can run it inside the thread pool
-    with a timeout.
-    """
+
     from LLMcall import classify_ticket
     return classify_ticket(subject, body)
 
 
 def classify_ticket_background(ticket_id: int, subject: str, body: str):
-    """
-    Background worker that:
-      1. Calls the LLM with a timeout guard
-      2. Validates the output schema
-      3. Retries on failure up to MAX_RETRIES times
-      4. Updates Supabase to 'classified' or 'failed'
-    """
+
     logger.info(f"[BG] Starting classification for ticket #{ticket_id}")
 
-    for attempt in range(1, MAX_RETRIES + 2):  # attempts 1, 2, 3
+    for attempt in range(1, MAX_RETRIES + 2): 
         try:
-            # Run the synchronous LLM call in a thread with a timeout
             future = _executor.submit(_run_llm_classification, subject, body)
             result = future.result(timeout=LLM_TIMEOUT_SECONDS)
 
-            # --- Handle unparseable output ---
             if not result or not isinstance(result, dict):
                 logger.warning(
                     f"[BG] Ticket #{ticket_id} attempt {attempt}: "
@@ -137,12 +96,10 @@ def classify_ticket_background(ticket_id: int, subject: str, body: str):
                     break
                 continue
 
-            # --- Extract and normalise ---
             predicted_class = str(result.get("class", "")).strip().upper()
             predicted_priority = str(result.get("priority", "")).strip().upper()
             predicted_summary = str(result.get("summary", "")).strip()
 
-            # --- Validation guard (the "trap") ---
             if predicted_class not in ALLOWED_CLASSES or predicted_priority not in ALLOWED_PRIORITIES:
                 logger.warning(
                     f"[BG] Ticket #{ticket_id} attempt {attempt}: "
@@ -153,7 +110,6 @@ def classify_ticket_background(ticket_id: int, subject: str, body: str):
                     break
                 continue
 
-            # --- Success: persist to Supabase ---
             supabase.table(TABLE_NAME).update({
                 "class": predicted_class,
                 "priority": predicted_priority,
@@ -165,7 +121,7 @@ def classify_ticket_background(ticket_id: int, subject: str, body: str):
                 f"[BG] Ticket #{ticket_id} CLASSIFIED — "
                 f"[{predicted_class}] [{predicted_priority}]"
             )
-            return  # ← success, exit the retry loop
+            return  
 
         except FuturesTimeoutError:
             logger.error(
@@ -183,7 +139,6 @@ def classify_ticket_background(ticket_id: int, subject: str, body: str):
             if attempt > MAX_RETRIES:
                 break
 
-    # --- All retries exhausted → mark as failed ---
     logger.error(f"[BG] Ticket #{ticket_id} FAILED after {MAX_RETRIES + 1} attempts.")
     try:
         supabase.table(TABLE_NAME).update({
@@ -196,33 +151,18 @@ def classify_ticket_background(ticket_id: int, subject: str, body: str):
         )
 
 
-# ---------------------------------------------------------
-# Routes — Frontend
-# ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
-    """Serve the single-page dashboard."""
     return FileResponse("static/index.html")
 
-
-# ---------------------------------------------------------
-# Routes — API
-# ---------------------------------------------------------
 @app.post("/api/tickets", status_code=202)
 async def create_ticket(ticket: TicketCreate, background_tasks: BackgroundTasks):
-    """
-    Create a new ticket:
-      1. Generate a unique numeric ID from the current timestamp.
-      2. Insert into Supabase with Status='pending'.
-      3. Return 202 Accepted immediately.
-      4. Fire a background task to classify via the LLM.
-    """
-    # Sequential ID: find the current max and increment by 1
+
     try:
         max_row = (
             supabase.table(TABLE_NAME)
             .select("id")
-            .lt("id", 1_000_000)          # ignore legacy timestamp-based IDs
+            .lt("id", 1_000_000)       
             .order("id", desc=True)
             .limit(1)
             .execute()
@@ -232,7 +172,6 @@ async def create_ticket(ticket: TicketCreate, background_tasks: BackgroundTasks)
         logger.error(f"Failed to fetch max ID: {e}")
         raise HTTPException(status_code=500, detail=f"Could not generate ticket ID: {e}")
 
-    # Insert as pending
     try:
         supabase.table(TABLE_NAME).insert({
             "id": ticket_id,
@@ -244,7 +183,6 @@ async def create_ticket(ticket: TicketCreate, background_tasks: BackgroundTasks)
         logger.error(f"Failed to insert ticket: {e}")
         raise HTTPException(status_code=500, detail=f"Database insert failed: {e}")
 
-    # Fire background classification
     background_tasks.add_task(
         classify_ticket_background,
         ticket_id,
@@ -265,10 +203,7 @@ async def list_tickets(
     ticket_class: str | None = Query(None, alias="class"),
     priority: str | None = Query(None, alias="priority"),
 ):
-    """
-    List tickets with optional filters for status, class, and priority.
-    Returns all columns, ordered by id descending (newest first).
-    """
+
     query = supabase.table(TABLE_NAME).select("*")
 
     if status:
@@ -291,7 +226,6 @@ async def list_tickets(
 
 @app.get("/api/tickets/{ticket_id}")
 async def get_ticket(ticket_id: int):
-    """Fetch a single ticket by its numeric ID."""
     try:
         response = (
             supabase.table(TABLE_NAME)
@@ -310,11 +244,6 @@ async def get_ticket(ticket_id: int):
 
 @app.post("/api/tickets/{ticket_id}/reclassify", status_code=202)
 async def reclassify_ticket(ticket_id: int, background_tasks: BackgroundTasks):
-    """
-    Re-trigger LLM classification for an existing ticket.
-    Resets status to 'pending' and fires a new background task.
-    """
-    # Fetch the ticket
     try:
         response = (
             supabase.table(TABLE_NAME)
@@ -330,7 +259,6 @@ async def reclassify_ticket(ticket_id: int, background_tasks: BackgroundTasks):
 
     ticket = response.data[0]
 
-    # Reset to pending
     supabase.table(TABLE_NAME).update({
         "Status": "pending",
         "class": None,
@@ -338,7 +266,6 @@ async def reclassify_ticket(ticket_id: int, background_tasks: BackgroundTasks):
         "summary": None,
     }).eq("id", ticket_id).execute()
 
-    # Fire background classification
     background_tasks.add_task(
         classify_ticket_background,
         ticket_id,
@@ -355,10 +282,6 @@ async def reclassify_ticket(ticket_id: int, background_tasks: BackgroundTasks):
 
 @app.post("/api/tickets/reclassify-failed", status_code=202)
 async def reclassify_failed_tickets(background_tasks: BackgroundTasks):
-    """
-    Re-trigger LLM classification for all tickets that currently have a 'failed' status.
-    Resets status to 'pending' and fires a background task for each.
-    """
     try:
         response = (
             supabase.table(TABLE_NAME)
@@ -401,7 +324,6 @@ async def reclassify_failed_tickets(background_tasks: BackgroundTasks):
 
 @app.get("/api/stats")
 async def get_stats():
-    """Return aggregate counts for the stats bar."""
     try:
         all_tickets = supabase.table(TABLE_NAME).select("Status").execute()
     except Exception as e:
