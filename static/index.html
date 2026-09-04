@@ -706,7 +706,10 @@
                     <span class="toggle-track"></span>
                     <span>Auto-refresh</span>
                 </label>
-                <button class="btn btn--ghost btn--icon" id="refresh-btn" title="Refresh now">
+                <button class="btn btn--reclassify btn--sm" id="retry-failed-btn" title="Retry all failed tickets" style="margin-left: 8px;">
+                    ↻ Retry Failed
+                </button>
+                <button class="btn btn--ghost btn--icon" id="refresh-btn" title="Refresh now" style="margin-left: 8px;">
                     ↻
                 </button>
             </div>
@@ -771,6 +774,7 @@ const filterClass = $('#filter-class');
 const filterPriority = $('#filter-priority');
 const refreshBtn = $('#refresh-btn');
 const autoRefreshCheckbox = $('#auto-refresh-toggle');
+const retryFailedBtn = $('#retry-failed-btn');
 
 /* ================================================================
    TOAST NOTIFICATIONS
@@ -1026,6 +1030,24 @@ async function reclassifyTicket(id, event) {
 }
 // Expose to inline onclick
 window.reclassifyTicket = reclassifyTicket;
+
+retryFailedBtn.addEventListener('click', async () => {
+    retryFailedBtn.disabled = true;
+    const originalText = retryFailedBtn.innerHTML;
+    retryFailedBtn.innerHTML = '↻ Retrying...';
+    try {
+        const res = await apiPost('/tickets/reclassify-failed', {});
+        showToast(res.message, res.count > 0 ? 'success' : 'info');
+        if (res.count > 0) {
+            await refreshAll();
+        }
+    } catch (e) {
+        showToast('Bulk retry failed: ' + e.message, 'error');
+    } finally {
+        retryFailedBtn.disabled = false;
+        retryFailedBtn.innerHTML = originalText;
+    }
+});
 
 /* ================================================================
    SORTING

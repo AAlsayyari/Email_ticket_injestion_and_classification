@@ -353,6 +353,52 @@ async def reclassify_ticket(ticket_id: int, background_tasks: BackgroundTasks):
     }
 
 
+@app.post("/api/tickets/reclassify-failed", status_code=202)
+async def reclassify_failed_tickets(background_tasks: BackgroundTasks):
+    """
+    Re-trigger LLM classification for all tickets that currently have a 'failed' status.
+    Resets status to 'pending' and fires a background task for each.
+    """
+    try:
+        response = (
+            supabase.table(TABLE_NAME)
+            .select("*")
+            .eq("Status", "failed")
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
+
+    failed_tickets = response.data
+    if not failed_tickets:
+        return {"message": "No failed tickets to reclassify.", "count": 0}
+
+    count = len(failed_tickets)
+
+    try:
+        supabase.table(TABLE_NAME).update({
+            "Status": "pending",
+            "class": None,
+            "priority": None,
+            "summary": None,
+        }).eq("Status", "failed").execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database update failed: {e}")
+
+    for ticket in failed_tickets:
+        background_tasks.add_task(
+            classify_ticket_background,
+            ticket["id"],
+            ticket.get("subject", ""),
+            ticket.get("body", ""),
+        )
+
+    return {
+        "message": f"Successfully queued {count} failed tickets for reclassification.",
+        "count": count,
+    }
+
+
 @app.get("/api/stats")
 async def get_stats():
     """Return aggregate counts for the stats bar."""
