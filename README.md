@@ -60,8 +60,13 @@ Both single-ticket and bulk re-classification have been implemented to handle mo
 
 ### What I would change or add with more time; and anything I consider a weakness of my solution.
    
-   **Durable Task Queue:** Currently, background tasks are run in server memory. If the server restarts or crashes, in-flight tickets are lost (though they remain 'pending' and can be manually reclassified). In a production environment, I would replace FastAPI's `BackgroundTasks` with a durable queue like Celery and Redis/RabbitMQ to guarantee execution.
-   **Model Hosting:** The LLM is currently loaded directly into the web server's memory. In a multi-worker production deployment, this would bloat memory usage. I would decouple the LLM inference into its own dedicated microservice (using something like vLLM or Ollama) and call it via an internal API.
+   **Durable Task Queue:**
+   Currently, background tasks are run in server memory. If the server restarts or crashes, in-flight tickets are lost (though they remain 'pending' and can be manually reclassified). In a production environment, I would replace FastAPI's `BackgroundTasks` with a durable queue like Celery and Redis/RabbitMQ to guarantee execution.
+
+
+   
+   **Model Hosting:**
+   The LLM is currently loaded directly into the web server's memory. In a multi-worker production deployment, this would bloat memory usage. I would decouple the LLM inference into its own dedicated microservice (using something like vLLM or Ollama) and call it via an internal API.
    **Pagination:** The `GET /api/tickets` endpoint currently fetches all tickets that match the applied filters. For a production system with millions of tickets, I would implement standard `limit` and `offset` query parameters to paginate the database response and update the frontend table to handle infinite scrolling or numbered pages.
 
 ### AI use.
