@@ -1,5 +1,5 @@
 # Email Ticket Dashboard
-
+### Note: I have left a set of read/write keys for a temporary sandbox Supabase database in the .env file so you can test this out of the box without needing to configure your own database. These keys will be revoked after the review.
 ## How to Run
 
 1. **Install dependencies** (first time only)
