@@ -80,3 +80,6 @@ Both single-ticket and bulk re-classification have been implemented to handle mo
    
    **README.md:** 
    Used AI to help with the design and content of the README.md file.
+
+   **Dataset:**
+   Used AI to help with the creation of the 150 example dataset.
