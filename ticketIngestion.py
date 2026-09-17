@@ -2,15 +2,10 @@ import json
 import os
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from supabase import create_client, Client
 from LLMcall import classify_ticket
+import db_csv
 
 load_dotenv()
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ALLOWED_CLASSES = [
     "BILLING", "TECHNICAL", "ACCOUNT", "OTHER",
@@ -25,7 +20,7 @@ def _classify_and_update(ticket_id: int, subject: str, body: str):
 
         if not result or not isinstance(result, dict):
             print(f"  Ticket #{ticket_id}: LLM returned unparseable output → failed")
-            supabase.table("email_dataset").update({"Status": "failed"}).eq("id", ticket_id).execute()
+            db_csv.update_ticket(ticket_id, {"Status": "failed"})
             return
 
         predicted_class = str(result.get("class", "")).strip().upper()
@@ -34,20 +29,20 @@ def _classify_and_update(ticket_id: int, subject: str, body: str):
 
         if predicted_class not in ALLOWED_CLASSES or predicted_priority not in ALLOWED_PRIORITIES:
             print(f"  Ticket #{ticket_id}: Invalid class/priority → failed")
-            supabase.table("email_dataset").update({"Status": "failed"}).eq("id", ticket_id).execute()
+            db_csv.update_ticket(ticket_id, {"Status": "failed"})
             return
 
-        supabase.table("email_dataset").update({
+        db_csv.update_ticket(ticket_id, {
             "class": predicted_class,
             "priority": predicted_priority,
             "summary": predicted_summary,
             "Status": "classified",
-        }).eq("id", ticket_id).execute()
+        })
         print(f"  Ticket #{ticket_id}: CLASSIFIED [{predicted_class}] [{predicted_priority}]")
 
     except Exception as e:
         print(f"  Ticket #{ticket_id}: Error — {e}")
-        supabase.table("email_dataset").update({"Status": "failed"}).eq("id", ticket_id).execute()
+        db_csv.update_ticket(ticket_id, {"Status": "failed"})
 
 
 def process_json_data(json_list):
@@ -60,17 +55,17 @@ def process_json_data(json_list):
         subject = item.get("subject", "")
         body = item.get("body", "")
 
-        check = supabase.table("email_dataset").select("id").eq("id", numeric_id).execute()
-        if check.data:
+        check = db_csv.get_ticket(numeric_id)
+        if check:
             print(f"Skipping {raw_id}: Already in database.")
             continue
 
-        supabase.table("email_dataset").insert({
+        db_csv.insert_ticket({
             "id": numeric_id,
             "subject": subject,
             "body": body,
             "Status": "pending",
-        }).execute()
+        })
         print(f"Inserted {raw_id} -> queuing classification")
 
         fut = executor.submit(_classify_and_update, numeric_id, subject, body)
@@ -84,5 +79,6 @@ def process_json_data(json_list):
     print("Done.")
 
 
-dataset = json.load(open("dataset1.json"))
-process_json_data(dataset)
+if __name__ == "__main__":
+    dataset = json.load(open("dataset1.json", encoding="utf-8"))
+    process_json_data(dataset)

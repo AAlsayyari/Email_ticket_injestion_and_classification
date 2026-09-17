@@ -2,15 +2,10 @@ import json
 import re
 import os
 from dotenv import load_dotenv
-from supabase import create_client, Client
 from transformers import pipeline as hf_pipeline
+import db_csv
 
 load_dotenv()
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")  
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ALLOWED_CLASSES = [
     "BILLING", "TECHNICAL", "ACCOUNT", "OTHER", 
@@ -90,10 +85,9 @@ def classify_ticket(subject: str, body: str):
         return None
 
 def process_pending_tickets():
-    print("\nFetching pending tickets from Supabase...")
+    print("\nFetching pending tickets from CSV storage...")
     
-    response = supabase.table("email_dataset").select("*").eq("Status", "pending").execute()
-    pending_tickets = response.data
+    pending_tickets = db_csv.list_tickets(status="pending")
 
     if not pending_tickets:
         print("No pending tickets found.")
@@ -112,7 +106,7 @@ def process_pending_tickets():
 
         if not result or not isinstance(result, dict):
             print(f"Failed: Model output was unparseable or empty.")
-            supabase.table("email_dataset").update({"Status": "failed"}).eq("id", ticket_id).execute()
+            db_csv.update_ticket(ticket_id, {"Status": "failed"})
             continue
 
         predicted_class = str(result.get("class", "")).strip().upper()
@@ -124,7 +118,7 @@ def process_pending_tickets():
             print(f"Blocked Priority: '{predicted_priority}'")
             print(f"Action: Rejecting payload and marking ticket as 'failed'.")
 
-            supabase.table("email_dataset").update({"Status": "failed"}).eq("id", ticket_id).execute()
+            db_csv.update_ticket(ticket_id, {"Status": "failed"})
             continue
 
         update_payload = {
@@ -134,7 +128,7 @@ def process_pending_tickets():
             "Status": "classified"
         }
 
-        supabase.table("email_dataset").update(update_payload).eq("id", ticket_id).execute()
+        db_csv.update_ticket(ticket_id, update_payload)
         print(f"Success: [{predicted_class}] [{predicted_priority}]")
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 # Email Ticket Dashboard
-### Note: I have left a set of read/write keys for a temporary sandbox Supabase database in the .env file so you can test this out of the box without needing to configure your own database. These keys will be revoked after the review.
+### Note: All tickets are stored locally in a CSV file (`tickets.csv`), allowing the system to run completely offline/locally without requiring any external database or Supabase configuration.
 ## How to Run
 
 1. **Install dependencies** (first time only)
@@ -27,7 +27,7 @@
 
 ## Design Notes
 
-- **Storage:** Supabase (hosted Postgres), single table `email_dataset`.
+- **Storage:** Local CSV file (`tickets.csv`) via `db_csv.py`, managing atomic updates with thread-safe file operations. No external database credentials needed.
 
 - **Async work:** `POST /api/tickets` returns 202 immediately and runs classification in a FastAPI `BackgroundTasks` callback, which submits the LLM call to a `ThreadPoolExecutor` with a 120s timeout.
 

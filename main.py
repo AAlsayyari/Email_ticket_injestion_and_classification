@@ -10,12 +10,10 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from supabase import create_client, Client
+
+import db_csv
 
 load_dotenv()
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 TABLE_NAME = "email_dataset"
 LLM_TIMEOUT_SECONDS = 120  
@@ -33,8 +31,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("ticket-dashboard")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
@@ -110,12 +106,12 @@ def classify_ticket_background(ticket_id: int, subject: str, body: str):
                     break
                 continue
 
-            supabase.table(TABLE_NAME).update({
+            db_csv.update_ticket(ticket_id, {
                 "class": predicted_class,
                 "priority": predicted_priority,
                 "summary": predicted_summary,
                 "Status": "classified",
-            }).eq("id", ticket_id).execute()
+            })
 
             logger.info(
                 f"[BG] Ticket #{ticket_id} CLASSIFIED — "
@@ -141,9 +137,9 @@ def classify_ticket_background(ticket_id: int, subject: str, body: str):
 
     logger.error(f"[BG] Ticket #{ticket_id} FAILED after {MAX_RETRIES + 1} attempts.")
     try:
-        supabase.table(TABLE_NAME).update({
+        db_csv.update_ticket(ticket_id, {
             "Status": "failed",
-        }).eq("id", ticket_id).execute()
+        })
     except Exception:
         logger.error(
             f"[BG] Could not update ticket #{ticket_id} to 'failed': "
@@ -157,31 +153,22 @@ async def serve_frontend():
 
 @app.post("/api/tickets", status_code=202)
 async def create_ticket(ticket: TicketCreate, background_tasks: BackgroundTasks):
-
     try:
-        max_row = (
-            supabase.table(TABLE_NAME)
-            .select("id")
-            .lt("id", 1_000_000)       
-            .order("id", desc=True)
-            .limit(1)
-            .execute()
-        )
-        ticket_id = (max_row.data[0]["id"] + 1) if max_row.data else 1001
+        ticket_id = db_csv.get_next_ticket_id()
     except Exception as e:
-        logger.error(f"Failed to fetch max ID: {e}")
+        logger.error(f"Failed to fetch next ID: {e}")
         raise HTTPException(status_code=500, detail=f"Could not generate ticket ID: {e}")
 
     try:
-        supabase.table(TABLE_NAME).insert({
+        db_csv.insert_ticket({
             "id": ticket_id,
             "subject": ticket.subject,
             "body": ticket.body,
             "Status": "pending",
-        }).execute()
+        })
     except Exception as e:
         logger.error(f"Failed to insert ticket: {e}")
-        raise HTTPException(status_code=500, detail=f"Database insert failed: {e}")
+        raise HTTPException(status_code=500, detail=f"CSV storage insert failed: {e}")
 
     background_tasks.add_task(
         classify_ticket_background,
@@ -203,68 +190,44 @@ async def list_tickets(
     ticket_class: str | None = Query(None, alias="class"),
     priority: str | None = Query(None, alias="priority"),
 ):
-
-    query = supabase.table(TABLE_NAME).select("*")
-
-    if status:
-        query = query.eq("Status", status)
-    if ticket_class:
-        query = query.eq("class", ticket_class.upper())
-    if priority:
-        query = query.eq("priority", priority.upper())
-
-    query = query.order("id", desc=True)
-
     try:
-        response = query.execute()
+        tickets = db_csv.list_tickets(status=status, ticket_class=ticket_class, priority=priority)
     except Exception as e:
         logger.error(f"Failed to fetch tickets: {e}")
-        raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch tickets: {e}")
 
-    return {"tickets": response.data, "count": len(response.data)}
+    return {"tickets": tickets, "count": len(tickets)}
 
 
 @app.get("/api/tickets/{ticket_id}")
 async def get_ticket(ticket_id: int):
     try:
-        response = (
-            supabase.table(TABLE_NAME)
-            .select("*")
-            .eq("id", ticket_id)
-            .execute()
-        )
+        ticket = db_csv.get_ticket(ticket_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve ticket: {e}")
 
-    if not response.data:
+    if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found.")
 
-    return response.data[0]
+    return ticket
 
 
 @app.post("/api/tickets/{ticket_id}/reclassify", status_code=202)
 async def reclassify_ticket(ticket_id: int, background_tasks: BackgroundTasks):
     try:
-        response = (
-            supabase.table(TABLE_NAME)
-            .select("*")
-            .eq("id", ticket_id)
-            .execute()
-        )
+        ticket = db_csv.get_ticket(ticket_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve ticket: {e}")
 
-    if not response.data:
+    if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found.")
 
-    ticket = response.data[0]
-
-    supabase.table(TABLE_NAME).update({
+    db_csv.update_ticket(ticket_id, {
         "Status": "pending",
         "class": None,
         "priority": None,
         "summary": None,
-    }).eq("id", ticket_id).execute()
+    })
 
     background_tasks.add_task(
         classify_ticket_background,
@@ -283,30 +246,24 @@ async def reclassify_ticket(ticket_id: int, background_tasks: BackgroundTasks):
 @app.post("/api/tickets/reclassify-failed", status_code=202)
 async def reclassify_failed_tickets(background_tasks: BackgroundTasks):
     try:
-        response = (
-            supabase.table(TABLE_NAME)
-            .select("*")
-            .eq("Status", "failed")
-            .execute()
-        )
+        failed_tickets = db_csv.list_tickets(status="failed")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Query failed: {e}")
 
-    failed_tickets = response.data
     if not failed_tickets:
         return {"message": "No failed tickets to reclassify.", "count": 0}
 
     count = len(failed_tickets)
 
     try:
-        supabase.table(TABLE_NAME).update({
+        db_csv.update_tickets_by_status("failed", {
             "Status": "pending",
             "class": None,
             "priority": None,
             "summary": None,
-        }).eq("Status", "failed").execute()
+        })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database update failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update failed: {e}")
 
     for ticket in failed_tickets:
         background_tasks.add_task(
@@ -325,19 +282,6 @@ async def reclassify_failed_tickets(background_tasks: BackgroundTasks):
 @app.get("/api/stats")
 async def get_stats():
     try:
-        all_tickets = supabase.table(TABLE_NAME).select("Status").execute()
+        return db_csv.get_stats()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
-
-    data = all_tickets.data
-    total = len(data)
-    pending = sum(1 for t in data if t.get("Status") == "pending")
-    classified = sum(1 for t in data if t.get("Status") == "classified")
-    failed = sum(1 for t in data if t.get("Status") == "failed")
-
-    return {
-        "total": total,
-        "pending": pending,
-        "classified": classified,
-        "failed": failed,
-    }
+        raise HTTPException(status_code=500, detail=f"Failed to calculate stats: {e}")
